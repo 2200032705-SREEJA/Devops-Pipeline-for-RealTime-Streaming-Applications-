@@ -1,0 +1,1387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StreamPulse — Live Analytics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root {
+  --g: #1ed760;
+  --g2: #17b550;
+  --g-dim: rgba(30,215,96,0.12);
+  --g-glow: rgba(30,215,96,0.2);
+  --black: #0a0a0a;
+  --s1: #111111;
+  --s2: #181818;
+  --s3: #202020;
+  --s4: #2a2a2a;
+  --line: rgba(255,255,255,0.06);
+  --line2: rgba(255,255,255,0.10);
+  --text: #ffffff;
+  --muted: #888;
+  --dim: #444;
+  --sb: 240px;
+  --radius: 14px;
+}
+
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+html { font-size: 15px; }
+
+body {
+  background: var(--black);
+  color: var(--text);
+  font-family: 'Syne', sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ─── Noise texture overlay ─────────────────────────── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.5;
+}
+
+/* ─── Sidebar ──────────────────────────────────────── */
+.sidebar {
+  position: fixed;
+  left: 0; top: 0; bottom: 0;
+  width: var(--sb);
+  background: var(--s1);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  padding: 28px 16px 24px;
+  z-index: 200;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  margin-bottom: 40px;
+}
+
+.logo-mark {
+  width: 30px;
+  height: 30px;
+  background: var(--g);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logo-mark svg { width: 16px; height: 16px; }
+
+.logo-name {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  color: #fff;
+}
+
+.logo-name span { color: var(--g); }
+
+.nav-group { margin-bottom: 28px; }
+
+.nav-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--dim);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 0 10px;
+  margin-bottom: 6px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: color 0.15s, background 0.15s;
+  position: relative;
+  margin-bottom: 1px;
+}
+
+.nav-item:hover { color: #fff; background: var(--s3); }
+
+.nav-item.active {
+  color: #fff;
+  background: var(--g-dim);
+}
+
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 25%; bottom: 25%;
+  width: 2.5px;
+  background: var(--g);
+  border-radius: 0 2px 2px 0;
+}
+
+.nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+.live-pill {
+  margin-left: auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--g);
+  border: 1px solid rgba(30,215,96,0.4);
+  border-radius: 20px;
+  padding: 1px 6px;
+  letter-spacing: 1px;
+  animation: pill-blink 2.5s ease-in-out infinite;
+}
+
+@keyframes pill-blink {
+  0%,100% { opacity: 1; } 50% { opacity: 0.45; }
+}
+
+.divider {
+  height: 1px;
+  background: var(--line);
+  margin: 8px 10px 20px;
+}
+
+/* Now playing sidebar card */
+.np-card {
+  margin-top: auto;
+  background: var(--s2);
+  border: 1px solid var(--line2);
+  border-radius: 12px;
+  padding: 14px;
+  position: relative;
+  overflow: hidden;
+}
+
+.np-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--g), transparent);
+  opacity: 0.5;
+}
+
+.np-eyebrow {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--g);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.np-dot {
+  width: 5px; height: 5px;
+  background: var(--g);
+  border-radius: 50%;
+  animation: pill-blink 1.5s infinite;
+}
+
+.np-track { font-size: 13px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.np-artist { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+
+.np-waveform {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 18px;
+  margin-top: 12px;
+}
+
+.np-waveform span {
+  flex: 1;
+  background: var(--g);
+  border-radius: 1px;
+  opacity: 0.7;
+  animation: wave 0.8s ease-in-out infinite alternate;
+}
+
+.np-waveform span:nth-child(1) { animation-delay:0s; height:30%; }
+.np-waveform span:nth-child(2) { animation-delay:.07s; height:80%; }
+.np-waveform span:nth-child(3) { animation-delay:.14s; height:50%; }
+.np-waveform span:nth-child(4) { animation-delay:.21s; height:90%; }
+.np-waveform span:nth-child(5) { animation-delay:.28s; height:40%; }
+.np-waveform span:nth-child(6) { animation-delay:.35s; height:70%; }
+.np-waveform span:nth-child(7) { animation-delay:.42s; height:55%; }
+.np-waveform span:nth-child(8) { animation-delay:.49s; height:85%; }
+.np-waveform span:nth-child(9) { animation-delay:.56s; height:35%; }
+.np-waveform span:nth-child(10) { animation-delay:.63s; height:65%; }
+.np-waveform span:nth-child(11) { animation-delay:.7s; height:45%; }
+.np-waveform span:nth-child(12) { animation-delay:.77s; height:75%; }
+
+@keyframes wave {
+  from { transform: scaleY(0.2); }
+  to { transform: scaleY(1); }
+}
+
+/* ─── Main ──────────────────────────────────────────── */
+.main {
+  margin-left: var(--sb);
+  min-height: 100vh;
+}
+
+/* ─── Topbar ──────────────────────────────────────── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32px;
+  height: 60px;
+  background: rgba(10,10,10,0.85);
+  backdrop-filter: blur(24px);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.page-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.2px;
+}
+
+.breadcrumb {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--dim);
+  letter-spacing: 0.5px;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.live-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--g);
+  letter-spacing: 1.5px;
+  padding: 5px 12px;
+  border: 1px solid rgba(30,215,96,0.25);
+  border-radius: 20px;
+  background: rgba(30,215,96,0.06);
+}
+
+.live-dot-top {
+  width: 6px; height: 6px;
+  background: var(--g);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--g);
+  animation: pulse-dot 1.8s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%,100% { transform: scale(1); box-shadow: 0 0 8px var(--g); }
+  50% { transform: scale(1.3); box-shadow: 0 0 16px var(--g); }
+}
+
+.topbar-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--s3);
+  border: 1px solid var(--line2);
+  color: var(--muted);
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: 'Syne', sans-serif;
+  transition: all 0.15s;
+}
+
+.topbar-btn:hover { background: var(--s4); color: #fff; border-color: var(--line2); }
+
+.topbar-btn svg { width: 13px; height: 13px; }
+
+/* ─── Content ─────────────────────────────────────── */
+.content {
+  padding: 28px 32px 40px;
+}
+
+/* ─── Ticker tape ─────────────────────────────────── */
+.ticker-wrap {
+  overflow: hidden;
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  background: var(--s2);
+  margin-bottom: 28px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+}
+
+.ticker-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: #000;
+  background: var(--g);
+  padding: 0 12px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  letter-spacing: 1px;
+  flex-shrink: 0;
+  font-weight: 500;
+}
+
+.ticker-inner {
+  display: flex;
+  white-space: nowrap;
+  animation: ticker 30s linear infinite;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  padding-left: 20px;
+  gap: 40px;
+}
+
+.ticker-inner span { letter-spacing: 0.3px; }
+.ticker-inner b { color: var(--g); font-weight: 400; }
+
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+/* ─── KPI Row ─────────────────────────────────────── */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.kpi-card {
+  background: var(--s2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px 22px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.2s, transform 0.2s;
+  cursor: default;
+}
+
+.kpi-card:hover {
+  border-color: var(--line2);
+  transform: translateY(-1px);
+}
+
+.kpi-card::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 16px; right: 16px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--g-glow), transparent);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.kpi-card:hover::after { opacity: 1; }
+
+.kpi-index {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--dim);
+  letter-spacing: 1px;
+  margin-bottom: 16px;
+}
+
+.kpi-value {
+  font-size: 32px;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1;
+  letter-spacing: -1.5px;
+  margin-bottom: 6px;
+  transition: color 0.3s;
+}
+
+.kpi-value.flash { color: var(--g); }
+
+.kpi-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+
+.kpi-delta {
+  margin-top: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--g);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.kpi-bg-number {
+  position: absolute;
+  bottom: -8px;
+  right: 12px;
+  font-size: 60px;
+  font-weight: 800;
+  color: rgba(255,255,255,0.025);
+  line-height: 1;
+  pointer-events: none;
+  letter-spacing: -3px;
+}
+
+/* ─── Main two-col grid ───────────────────────────── */
+.two-col {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+/* ─── Panel ───────────────────────────────────────── */
+.panel {
+  background: var(--s2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 22px;
+  position: relative;
+  overflow: hidden;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.panel-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.1px;
+}
+
+.panel-meta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--dim);
+  letter-spacing: 0.5px;
+}
+
+/* ─── Artist rows ─────────────────────────────────── */
+.artist-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  transition: background 0.15s;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.artist-row:last-child { border-bottom: none; }
+
+.artist-row:hover {
+  background: var(--s3);
+  padding-left: 8px;
+  padding-right: 8px;
+  margin: 0 -8px;
+}
+
+.artist-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--dim);
+  width: 18px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.artist-ava {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+  flex-shrink: 0;
+  letter-spacing: -0.5px;
+}
+
+.artist-info { flex: 1; min-width: 0; }
+
+.artist-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.artist-sub {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.artist-track-bar {
+  width: 70px;
+  flex-shrink: 0;
+}
+
+.track-rail {
+  height: 2px;
+  background: var(--s4);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+.track-fill {
+  height: 100%;
+  background: var(--g);
+  border-radius: 1px;
+  transition: width 1.2s cubic-bezier(0.16,1,0.3,1);
+}
+
+.artist-plays {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--g);
+  flex-shrink: 0;
+  min-width: 32px;
+  text-align: right;
+}
+
+/* ─── Donut chart container ───────────────────────── */
+.chart-container {
+  position: relative;
+  height: 210px;
+}
+
+/* ─── Three col bottom ────────────────────────────── */
+.three-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+/* ─── Event feed ──────────────────────────────────── */
+.event-item {
+  display: grid;
+  grid-template-columns: 6px 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.event-item:last-child { border-bottom: none; }
+
+.event-pip {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--g);
+  flex-shrink: 0;
+  animation: pip-pulse 2s ease-in-out infinite;
+}
+
+@keyframes pip-pulse {
+  0%,100% { opacity: 1; } 50% { opacity: 0.3; }
+}
+
+.event-track {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.event-artist {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.event-plat {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--muted);
+  background: var(--s3);
+  padding: 2px 7px;
+  border-radius: 20px;
+  border: 1px solid var(--line2);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.event-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--dim);
+  min-width: 28px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ─── Bar chart container ─────────────────────────── */
+.bar-container { height: 180px; position: relative; }
+
+/* ─── Activity timeline ───────────────────────────── */
+.activity-panel { grid-column: span 3; }
+
+.hour-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 60px;
+  padding-top: 8px;
+}
+
+.hour-bar {
+  flex: 1;
+  background: var(--s4);
+  border-radius: 2px 2px 0 0;
+  min-height: 4px;
+  transition: background 0.2s, height 0.8s cubic-bezier(0.16,1,0.3,1);
+  cursor: pointer;
+  position: relative;
+}
+
+.hour-bar:hover { background: var(--g); }
+
+.hour-bar.active { background: rgba(30,215,96,0.5); }
+
+.hour-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--dim);
+}
+
+/* ─── Platform grid ───────────────────────────────── */
+.plat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.plat-cell {
+  background: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.plat-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: var(--g-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.plat-icon svg { width: 14px; height: 14px; color: var(--g); }
+
+.plat-label { font-size: 11px; color: var(--muted); font-weight: 500; }
+.plat-count { font-size: 18px; font-weight: 800; color: #fff; letter-spacing: -0.5px; line-height: 1.2; }
+
+/* ─── SSE status bar ──────────────────────────────── */
+.status-bar {
+  position: fixed;
+  bottom: 20px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--s2);
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+  z-index: 500;
+  transition: border-color 0.3s;
+}
+
+.status-bar.connected { border-color: rgba(30,215,96,0.3); }
+.status-indicator { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); transition: background 0.3s; }
+.status-bar.connected .status-indicator { background: var(--g); box-shadow: 0 0 8px var(--g); }
+
+/* ─── Loading ─────────────────────────────────────── */
+.shimmer {
+  background: linear-gradient(90deg, var(--s3) 25%, var(--s4) 50%, var(--s3) 75%);
+  background-size: 300% 100%;
+  animation: shimmer 1.4s ease infinite;
+  border-radius: 6px;
+}
+
+@keyframes shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.error-state {
+  text-align: center;
+  padding: 24px 16px;
+  color: var(--muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  line-height: 1.8;
+}
+
+.error-state b { color: #ff6b6b; font-weight: 400; }
+
+/* ─── Scrollbar ───────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--s4); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--dim); }
+
+/* ─── Entry animation ─────────────────────────────── */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-up { animation: fade-up 0.5s ease both; }
+.kpi-row .kpi-card:nth-child(1) { animation: fade-up 0.4s 0.05s ease both; }
+.kpi-row .kpi-card:nth-child(2) { animation: fade-up 0.4s 0.10s ease both; }
+.kpi-row .kpi-card:nth-child(3) { animation: fade-up 0.4s 0.15s ease both; }
+.kpi-row .kpi-card:nth-child(4) { animation: fade-up 0.4s 0.20s ease both; }
+</style>
+</head>
+<body>
+
+<!-- ─── Sidebar ──────────────────────────────────────── -->
+<aside class="sidebar">
+  <div class="logo">
+    <div class="logo-mark">
+      <svg viewBox="0 0 16 16" fill="none">
+        <path d="M2 8a6 6 0 1 1 12 0A6 6 0 0 1 2 8Z" fill="#000"/>
+        <path d="M5 6.5c1.8-.7 3.6-.7 5.5.2M5.5 8.5c1.4-.55 2.8-.55 4.3.15M6 10.5c.9-.35 1.8-.35 2.7.1" stroke="#1ed760" stroke-width="1.2" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <span class="logo-name">Stream<span>Pulse</span></span>
+  </div>
+
+  <div class="nav-group">
+    <div class="nav-label">Analytics</div>
+    <a class="nav-item active" href="#">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="1" y="1" width="5.5" height="5.5" rx="1.5"/><rect x="9.5" y="1" width="5.5" height="5.5" rx="1.5"/>
+        <rect x="1" y="9.5" width="5.5" height="5.5" rx="1.5"/><rect x="9.5" y="9.5" width="5.5" height="5.5" rx="1.5"/>
+      </svg>
+      Dashboard
+      <span class="live-pill">LIVE</span>
+    </a>
+    <a class="nav-item" href="#">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="6" cy="12" r="2"/><circle cx="12" cy="11" r="2"/>
+        <path d="M6 10V3.5L12 2v7"/>
+      </svg>
+      Top Artists
+    </a>
+    <a class="nav-item" href="#">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <polyline points="1,8 4,8 6,13 9.5,2 12,8 15,8"/>
+      </svg>
+      Live Stream
+    </a>
+    <a class="nav-item" href="#">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="8" cy="8" r="6.5"/><path d="M8 4.5V8l2.5 1.5"/>
+      </svg>
+      History
+    </a>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="nav-group">
+    <div class="nav-label">System</div>
+    <a class="nav-item" href="http://localhost:8080/docs" target="_blank">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M9 1.5H4a1.5 1.5 0 0 0-1.5 1.5v10A1.5 1.5 0 0 0 4 14.5h8A1.5 1.5 0 0 0 13.5 13V6L9 1.5Z"/>
+        <polyline points="9,1.5 9,6 13.5,6"/>
+      </svg>
+      API Docs
+    </a>
+    <a class="nav-item" href="http://localhost:3000" target="_blank">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="1.5" y="3" width="13" height="9" rx="1.5"/>
+        <path d="M5.5 14.5h5M8 12.5v2"/>
+      </svg>
+      Grafana
+    </a>
+  </div>
+
+  <div class="np-card">
+    <div class="np-eyebrow"><div class="np-dot"></div> Now Streaming</div>
+    <div class="np-track" id="sb-track">Connecting…</div>
+    <div class="np-artist" id="sb-artist">—</div>
+    <div class="np-waveform">
+      <span></span><span></span><span></span><span></span><span></span><span></span>
+      <span></span><span></span><span></span><span></span><span></span><span></span>
+    </div>
+  </div>
+</aside>
+
+<!-- ─── Main ─────────────────────────────────────────── -->
+<main class="main">
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="page-title">Real-Time Analytics</div>
+      <div class="breadcrumb">/ dashboard</div>
+    </div>
+    <div class="topbar-right">
+      <div class="live-tag">
+        <div class="live-dot-top"></div>
+        STREAMING
+      </div>
+      <button class="topbar-btn" onclick="fetchAll()">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M14 8A6 6 0 0 1 2.5 11.5"/><path d="M2 8A6 6 0 0 1 13.5 4.5"/>
+          <polyline points="14,4.5 13.5,8 10,7"/><polyline points="2,11.5 2.5,8 6,9"/>
+        </svg>
+        Refresh
+      </button>
+    </div>
+  </header>
+
+  <div class="content">
+
+    <!-- Ticker -->
+    <div class="ticker-wrap">
+      <div class="ticker-label">FEED</div>
+      <div class="ticker-inner" id="ticker-inner">
+        <span>Loading stream data…</span>
+        <span>Loading stream data…</span>
+      </div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="kpi-row">
+      <div class="kpi-card">
+        <div class="kpi-index">01</div>
+        <div class="kpi-value" id="kpi-events">—</div>
+        <div class="kpi-label">Total Events</div>
+        <div class="kpi-delta">↑ live stream active</div>
+        <div class="kpi-bg-number" id="kpi-events-bg">0</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-index">02</div>
+        <div class="kpi-value" id="kpi-hours">—</div>
+        <div class="kpi-label">Hours Streamed</div>
+        <div class="kpi-delta">↑ across all sessions</div>
+        <div class="kpi-bg-number">hrs</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-index">03</div>
+        <div class="kpi-value" id="kpi-artists">—</div>
+        <div class="kpi-label">Unique Artists</div>
+        <div class="kpi-delta">↑ trending now</div>
+        <div class="kpi-bg-number" id="kpi-artists-bg">0</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-index">04</div>
+        <div class="kpi-value" id="kpi-minutes">—</div>
+        <div class="kpi-label">Total Minutes</div>
+        <div class="kpi-delta">↑ and counting</div>
+        <div class="kpi-bg-number">min</div>
+      </div>
+    </div>
+
+    <!-- Two col: artists + donut -->
+    <div class="two-col">
+      <div class="panel fade-up">
+        <div class="panel-head">
+          <div class="panel-title">Top Artists</div>
+          <div class="panel-meta" id="artists-updated">—</div>
+        </div>
+        <div id="artist-list">
+          <div class="shimmer" style="height:38px;margin-bottom:10px;border-radius:8px;"></div>
+          <div class="shimmer" style="height:38px;margin-bottom:10px;border-radius:8px;width:90%;"></div>
+          <div class="shimmer" style="height:38px;border-radius:8px;width:75%;"></div>
+        </div>
+      </div>
+
+      <div class="panel fade-up">
+        <div class="panel-head">
+          <div class="panel-title">Play Distribution</div>
+          <div class="panel-meta">top 5</div>
+        </div>
+        <div class="chart-container">
+          <canvas id="donut-chart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Three col: events + bar + platforms -->
+    <div class="three-col">
+
+      <!-- Recent events -->
+      <div class="panel fade-up">
+        <div class="panel-head">
+          <div class="panel-title">Recent Streams</div>
+          <div class="panel-meta" id="event-count">—</div>
+        </div>
+        <div id="events-list">
+          <div class="shimmer" style="height:44px;margin-bottom:8px;border-radius:8px;"></div>
+          <div class="shimmer" style="height:44px;margin-bottom:8px;border-radius:8px;width:85%;"></div>
+          <div class="shimmer" style="height:44px;border-radius:8px;width:70%;"></div>
+        </div>
+      </div>
+
+      <!-- Minutes bar chart -->
+      <div class="panel fade-up">
+        <div class="panel-head">
+          <div class="panel-title">Minutes by Artist</div>
+          <div class="panel-meta">bar</div>
+        </div>
+        <div class="bar-container">
+          <canvas id="bar-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- Platforms -->
+      <div class="panel fade-up">
+        <div class="panel-head">
+          <div class="panel-title">By Platform</div>
+          <div class="panel-meta" id="plat-total">—</div>
+        </div>
+        <div class="plat-grid" id="plat-grid">
+          <div class="shimmer" style="height:60px;border-radius:10px;"></div>
+          <div class="shimmer" style="height:60px;border-radius:10px;"></div>
+          <div class="shimmer" style="height:60px;border-radius:10px;"></div>
+          <div class="shimmer" style="height:60px;border-radius:10px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hourly Activity (full width) -->
+    <div class="panel fade-up">
+      <div class="panel-head">
+        <div class="panel-title">Hourly Activity</div>
+        <div class="panel-meta">last 24 buckets</div>
+      </div>
+      <div class="hour-chart" id="hour-chart"></div>
+      <div class="hour-labels" id="hour-labels"></div>
+    </div>
+
+  </div><!-- /content -->
+</main>
+
+<!-- Status bar -->
+<div class="status-bar" id="status-bar">
+  <div class="status-indicator" id="status-dot"></div>
+  <span id="status-text">connecting…</span>
+</div>
+
+<script>
+const API = 'http://localhost:8080';
+
+const PALETTE = ['#1ed760','#17b550','#0f863d','#0a5c2a','#26d46c','#5ce69a','#3dcf7a'];
+const AVATARS = [
+  ['#1ed760','#000'], ['#e91e8c','#fff'], ['#2196f3','#fff'],
+  ['#ff9800','#000'], ['#9c27b0','#fff'], ['#00bcd4','#000'], ['#f44336','#fff']
+];
+
+const PLATFORM_ICONS = {
+  mobile: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="1" width="8" height="14" rx="1.5"/><path d="M7 12.5h2"/></svg>`,
+  desktop: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="3" width="13" height="9" rx="1.5"/><path d="M5.5 14.5h5M8 12.5v2"/></svg>`,
+  web: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 1.5S5.5 4.5 5.5 8s2.5 6.5 2.5 6.5M1.5 8h13"/></svg>`,
+  tablet: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="1.5" width="12" height="13" rx="1.5"/><path d="M8 12.5h.01"/></svg>`,
+  default: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6.5"/></svg>`
+};
+
+let donutChart = null, barChart = null;
+let prevEvents = 0;
+
+function fmt(n) {
+  if (n === undefined || n === null) return '—';
+  return n >= 1000 ? (n/1000).toFixed(1)+'k' : String(n);
+}
+
+function initials(name) {
+  return name.split(' ').filter(Boolean).map(w=>w[0]).join('').slice(0,2).toUpperCase();
+}
+
+function timeAgo(iso) {
+  if (!iso) return 'now';
+  const s = Math.floor((Date.now() - new Date(iso)) / 1000);
+  if (s < 60) return s + 's';
+  if (s < 3600) return Math.floor(s/60) + 'm';
+  return Math.floor(s/3600) + 'h';
+}
+
+function flashKPI(id, value) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = value;
+  el.classList.add('flash');
+  setTimeout(() => el.classList.remove('flash'), 600);
+}
+
+async function fetchAll() {
+  try {
+    const [topRes, hoursRes, recentRes, activityRes] = await Promise.all([
+      fetch(`${API}/stats/top-artists?limit=10`),
+      fetch(`${API}/stats/listening-hours`),
+      fetch(`${API}/events/recent`),
+      fetch(`${API}/stats/activity`),
+    ]);
+
+    const topData = await topRes.json();
+    const hoursData = await hoursRes.json();
+    const recentData = await recentRes.json();
+    const activityData = await activityRes.json();
+
+    setConnected(true);
+    renderKPIs(topData, hoursData);
+    renderArtists(topData.top_artists || []);
+    renderDonut(topData.top_artists || []);
+    renderBar(topData.top_artists || []);
+    renderEvents(recentData.events || []);
+    renderPlatforms(recentData.events || []);
+    renderHourly(activityData.hourly_activity || {});
+    updateTicker(topData.top_artists || []);
+    updateSidebar(topData.top_artists || [], recentData.events || []);
+  } catch (e) {
+    setConnected(false);
+    document.getElementById('artist-list').innerHTML =
+      `<div class="error-state"><b>API Offline</b><br>Ensure docker-compose is running<br><code style="color:#555;font-size:9px;">${API}</code></div>`;
+  }
+}
+
+function setConnected(ok) {
+  const bar = document.getElementById('status-bar');
+  const txt = document.getElementById('status-text');
+  bar.className = 'status-bar' + (ok ? ' connected' : '');
+  txt.textContent = ok ? 'connected · kafka live' : 'api offline';
+}
+
+function renderKPIs(top, hours) {
+  const artists = top.top_artists || [];
+  const total = hours.total_events || artists.reduce((s,a)=>s+a.plays,0);
+  const changed = total !== prevEvents && prevEvents > 0;
+  prevEvents = total;
+
+  flashKPI('kpi-events', total.toLocaleString());
+  flashKPI('kpi-hours', (hours.total_hours || 0).toFixed(1));
+  flashKPI('kpi-artists', artists.length);
+  flashKPI('kpi-minutes', Math.round(hours.total_minutes || 0).toLocaleString());
+
+  const ebg = document.getElementById('kpi-events-bg');
+  if (ebg) ebg.textContent = fmt(total);
+  const abg = document.getElementById('kpi-artists-bg');
+  if (abg) abg.textContent = artists.length;
+}
+
+function renderArtists(artists) {
+  if (!artists.length) {
+    document.getElementById('artist-list').innerHTML =
+      `<div class="error-state">No artists yet — run the producer!</div>`;
+    return;
+  }
+  const max = artists[0].plays;
+  const now = new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+  document.getElementById('artists-updated').textContent = 'updated ' + now;
+
+  document.getElementById('artist-list').innerHTML = artists.slice(0,5).map((a,i) => {
+    const [bg, fg] = AVATARS[i % AVATARS.length];
+    const pct = Math.round((a.plays / max) * 100);
+    return `
+    <div class="artist-row">
+      <div class="artist-num">${i+1}</div>
+      <div class="artist-ava" style="background:${bg};color:${fg}">${initials(a.artist)}</div>
+      <div class="artist-info">
+        <div class="artist-name">${a.artist}</div>
+        <div class="artist-sub">${a.total_minutes} min · ${a.plays} plays</div>
+      </div>
+      <div class="artist-track-bar">
+        <div class="track-rail"><div class="track-fill" style="width:${pct}%"></div></div>
+      </div>
+      <div class="artist-plays">${a.plays}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderDonut(artists) {
+  if (!artists.length) return;
+  const top5 = artists.slice(0,5);
+  const ctx = document.getElementById('donut-chart').getContext('2d');
+  if (donutChart) donutChart.destroy();
+  donutChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: top5.map(a=>a.artist),
+      datasets: [{
+        data: top5.map(a=>a.plays),
+        backgroundColor: PALETTE.slice(0,5),
+        borderWidth: 0,
+        hoverOffset: 8
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '72%',
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: {
+            color: '#888',
+            font: { size: 11, family: 'JetBrains Mono' },
+            padding: 12,
+            boxWidth: 8,
+            boxHeight: 8
+          }
+        },
+        tooltip: {
+          backgroundColor: '#181818',
+          borderColor: 'rgba(255,255,255,0.1)',
+          borderWidth: 1,
+          titleColor: '#fff',
+          bodyColor: '#888',
+          titleFont: { family: 'Syne', size: 12, weight: '700' },
+          bodyFont: { family: 'JetBrains Mono', size: 11 },
+          callbacks: { label: c => `  ${c.label}: ${c.parsed} plays` }
+        }
+      }
+    }
+  });
+}
+
+function renderBar(artists) {
+  if (!artists.length) return;
+  const top5 = artists.slice(0,5);
+  const ctx = document.getElementById('bar-chart').getContext('2d');
+  if (barChart) barChart.destroy();
+  barChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: top5.map(a => a.artist.split(' ')[0]),
+      datasets: [{
+        label: 'Minutes',
+        data: top5.map(a => parseFloat(a.total_minutes)),
+        backgroundColor: 'rgba(30,215,96,0.25)',
+        borderColor: '#1ed760',
+        borderWidth: 1,
+        borderRadius: 4,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#181818',
+          borderColor: 'rgba(255,255,255,0.1)',
+          borderWidth: 1,
+          titleColor: '#fff',
+          bodyColor: '#888',
+          titleFont: { family: 'Syne', size: 12, weight: '700' },
+          bodyFont: { family: 'JetBrains Mono', size: 11 },
+          callbacks: { label: c => `  ${c.parsed.y.toFixed(1)} min` }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false },
+          ticks: { color: '#555', font: { size: 10, family: 'JetBrains Mono' } },
+          border: { display: false }
+        },
+        y: {
+          grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false },
+          ticks: { color: '#555', font: { size: 10, family: 'JetBrains Mono' } },
+          border: { display: false }
+        }
+      }
+    }
+  });
+}
+
+function renderEvents(events) {
+  document.getElementById('event-count').textContent = events.length + ' events';
+  if (!events.length) {
+    document.getElementById('events-list').innerHTML =
+      `<div class="error-state">No events yet<br>Run the producer!</div>`;
+    return;
+  }
+  document.getElementById('events-list').innerHTML = events.slice(0,7).map(e => `
+    <div class="event-item">
+      <div class="event-pip"></div>
+      <div class="event-info">
+        <div class="event-track">${e.track_name || 'Unknown Track'}</div>
+        <div class="event-artist">${e.artist_name || 'Unknown'}</div>
+      </div>
+      <span class="event-plat">${e.platform || 'web'}</span>
+      <span class="event-time">${timeAgo(e.event_time || e.timestamp)}</span>
+    </div>
+  `).join('');
+}
+
+function renderPlatforms(events) {
+  const counts = {};
+  events.forEach(e => {
+    const p = (e.platform || 'web').toLowerCase();
+    counts[p] = (counts[p] || 0) + 1;
+  });
+
+  const total = Object.values(counts).reduce((a,b)=>a+b,0);
+  document.getElementById('plat-total').textContent = total + ' total';
+
+  if (!Object.keys(counts).length) {
+    document.getElementById('plat-grid').innerHTML =
+      `<div class="error-state" style="grid-column:span 2">No data</div>`;
+    return;
+  }
+
+  // Ensure 4 slots
+  const platforms = Object.keys(counts).slice(0,4);
+  while (platforms.length < 4) platforms.push(null);
+
+  document.getElementById('plat-grid').innerHTML = platforms.map(p => {
+    if (!p) return `<div class="plat-cell" style="opacity:.3">
+      <div class="plat-icon">${PLATFORM_ICONS.default}</div>
+      <div><div class="plat-label">—</div><div class="plat-count">—</div></div>
+    </div>`;
+    const icon = PLATFORM_ICONS[p] || PLATFORM_ICONS.default;
+    return `<div class="plat-cell">
+      <div class="plat-icon">${icon}</div>
+      <div>
+        <div class="plat-label">${p}</div>
+        <div class="plat-count">${counts[p]}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderHourly(hourly) {
+  const entries = Object.entries(hourly).slice(-24);
+  if (!entries.length) {
+    document.getElementById('hour-chart').innerHTML =
+      `<div class="error-state" style="width:100%">No activity data</div>`;
+    return;
+  }
+  const max = Math.max(...entries.map(([,v])=>v));
+  document.getElementById('hour-chart').innerHTML = entries.map(([k, v]) => {
+    const pct = max > 0 ? Math.round((v/max)*100) : 5;
+    const label = k.split(' ')[1] || k;
+    return `<div class="hour-bar" style="height:${pct}%" title="${label}: ${v} events"></div>`;
+  }).join('');
+
+  // Labels: first, mid, last
+  const first = entries[0][0].split(' ')[1] || entries[0][0];
+  const mid = entries[Math.floor(entries.length/2)][0].split(' ')[1] || '';
+  const last = entries[entries.length-1][0].split(' ')[1] || entries[entries.length-1][0];
+  document.getElementById('hour-labels').innerHTML = `<span>${first}</span><span>${mid}</span><span>${last}</span>`;
+}
+
+function updateTicker(artists) {
+  if (!artists.length) return;
+  const items = artists.slice(0,8).map(a =>
+    `<span><b>${a.artist}</b> &nbsp;${a.plays} plays &nbsp;·&nbsp; ${a.total_minutes} min</span>`
+  );
+  // duplicate for seamless loop
+  const content = [...items, ...items].join('<span style="color:var(--dim)">&nbsp;&nbsp;/&nbsp;&nbsp;</span>');
+  document.getElementById('ticker-inner').innerHTML = content;
+}
+
+function updateSidebar(artists, events) {
+  if (events.length) {
+    const latest = events[0];
+    document.getElementById('sb-track').textContent = latest.track_name || '— Live Feed —';
+    document.getElementById('sb-artist').textContent = latest.artist_name || '—';
+  } else if (artists.length) {
+    document.getElementById('sb-track').textContent = '— Live Feed —';
+    document.getElementById('sb-artist').textContent = artists[0].artist + ' · #1';
+  }
+}
+
+// SSE for real-time updates
+function connectSSE() {
+  try {
+    const es = new EventSource(`${API}/events/stream`);
+    es.onmessage = (e) => {
+      setConnected(true);
+      fetchAll(); // refresh full data on any SSE event
+    };
+    es.onerror = () => setConnected(false);
+  } catch(err) {
+    console.warn('SSE not available, falling back to polling');
+  }
+}
+
+// Boot
+fetchAll();
+connectSSE();
+setInterval(fetchAll, 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,109 @@
+version: '3.8'
+
+networks:
+  streaming-net:
+    driver: bridge
+
+services:
+  zookeeper:
+    image: zookeeper:3.8
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    networks:
+      - streaming-net
+    healthcheck:
+      test: ["CMD", "zkServer.sh", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: wurstmeister/kafka:2.12-2.2.1
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_HOST_NAME: kafka
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 24
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    networks:
+      - streaming-net
+    healthcheck:
+      test: ["CMD", "kafka-topics.sh", "--list", "--zookeeper", "zookeeper:2181"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  flink-jobmanager:
+    image: flink:1.18
+    container_name: flink-jobmanager
+    ports:
+      - "8081:8081"
+    environment:
+      - JOB_MANAGER_RPC_ADDRESS=flink-jobmanager
+    command: jobmanager
+    networks:
+      - streaming-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/overview"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  flink-taskmanager:
+    image: flink:1.18
+    container_name: flink-taskmanager
+    environment:
+      - JOB_MANAGER_RPC_ADDRESS=flink-jobmanager
+      - TASK_MANAGER_NUMBER_OF_TASK_SLOTS=4
+    command: taskmanager
+    depends_on:
+      - flink-jobmanager
+    networks:
+      - streaming-net
+
+  fastapi-backend:
+    build:
+      context: ./consumer
+      dockerfile: Dockerfile
+    container_name: fastapi-backend
+    ports:
+      - "8080:8080"
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - KAFKA_TOPIC=spotify-stream
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - streaming-net
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - streaming-net
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./monitoring/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+    depends_on:
+      - prometheus
+    networks:
+      - streaming-net
